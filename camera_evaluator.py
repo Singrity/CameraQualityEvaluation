@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import exifread
 from skimage import img_as_float
-from piq import brisque, niqe
+from piq import brisque
 import warnings
 from typing import List, Dict, Any
 from collections import Counter
@@ -18,10 +18,9 @@ class CameraEvaluator:
         "noise": 15.0,
         "color": 120.0,
         "brisque": 100.0,
-        "niqe": 8.0
     }
 
-    WEIGHTS = {"sharp": 0.25, "noise": 0.25, "color": 0.15, "brisque": 0.20, "niqe": 0.15}
+    WEIGHTS = {"sharp": 0.25, "noise": 0.25, "color": 0.15, "brisque": 0.20}
 
     def __init__(self):
         pass
@@ -56,7 +55,6 @@ class CameraEvaluator:
         tensor = torch.from_numpy(img_float.transpose(2, 0, 1)).unsqueeze(0)
         return {
             "brisque": float(brisque(tensor)),
-            "niqe": float(niqe(tensor))
         }
 
     async def evaluate(self, job: Job, img_paths: List[str]) -> dict:
@@ -85,18 +83,16 @@ class CameraEvaluator:
             n_n = np.clip(1 - (noise / self.NORM_THRESHOLDS["noise"]), 0, 1)
             c_n = np.clip(color / self.NORM_THRESHOLDS["color"], 0, 1)
             b_n = np.clip(1 - (iqa["brisque"] / self.NORM_THRESHOLDS["brisque"]), 0, 1)
-            ni_n = np.clip(1 - (iqa["niqe"] / self.NORM_THRESHOLDS["niqe"]), 0, 1)
 
             score = min(100, round(
                 self.WEIGHTS["sharp"] * s_n +
                 self.WEIGHTS["noise"] * n_n +
                 self.WEIGHTS["color"] * c_n +
-                self.WEIGHTS["brisque"] * b_n +
-                self.WEIGHTS["niqe"] * ni_n
+                self.WEIGHTS["brisque"] * b_n 
             ) * 100, 1)
 
             per_image.append({
-                "metrics": {"sharpness": sharp, "noise": noise, "color": color, "brisque": iqa["brisque"], "niqe": iqa["niqe"]},
+                "metrics": {"sharpness": sharp, "noise": noise, "color": color, "brisque": iqa["brisque"]},
                 "score": score
             })
 
@@ -110,7 +106,6 @@ class CameraEvaluator:
             "noise": np.median([m["metrics"]["noise"] for m in per_image]),
             "color": np.median([m["metrics"]["color"] for m in per_image]),
             "brisque": np.median([m["metrics"]["brisque"] for m in per_image]),
-            "niqe": np.median([m["metrics"]["niqe"] for m in per_image]),
             "score": np.median([m["score"] for m in per_image])
         }
 
@@ -136,7 +131,6 @@ class CameraEvaluator:
                 "noise_median": round(float(agg["noise"]), 2),
                 "color_vibrancy_median": round(float(agg["color"]), 2),
                 "brisque_median": round(float(agg["brisque"]), 2),
-                "niqe_median": round(float(agg["niqe"]), 2)
             },
             "per_image_scores": [m["score"] for m in per_image],
             "recommendations": self._generate_recommendations(agg, same_camera, len(per_image), consistency)
