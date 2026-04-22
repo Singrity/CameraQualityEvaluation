@@ -10,6 +10,13 @@ router = APIRouter()
 
 @router.post("/evaluate")
 async def evaluate(request: Request, files: list[UploadFile] = File(...)):
+
+    # TODO: validate files (check extensions, size limits, etc.)
+    # TODO: handle duplicates images
+    # TODO: save files to storage and pass paths to evaluator
+    # TODO: store metrics in postgres?
+
+
     job_id = str(uuid.uuid4())
     
     print(f"Received job {job_id} with {len(files)} files")
