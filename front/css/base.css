@@ -1,0 +1,318 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background-color: #f4f4f4;
+    padding: 20px;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 640px;
+    margin: 0 auto;
+    background: #fff;
+    padding: 32px;
+    border-radius: 12px;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 8px;
+    font-size: 1.8rem;
+}
+
+.subtitle {
+    text-align: center;
+    color: #888;
+    margin-bottom: 20px;
+    font-size: 0.95rem;
+}
+
+/* Recommendations Block */
+.recommendations {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.recommendations h3 {
+    color: #333;
+    font-size: 1.1rem;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recommendations ol {
+    padding-left: 20px;
+    color: #555;
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.recommendations li {
+    margin-bottom: 10px;
+}
+
+.recommendations li:last-child {
+    margin-bottom: 0;
+}
+
+.recommendations strong {
+    color: #333;
+}
+
+.recommendations ul {
+    padding-left: 24px;
+    margin: 6px 0 0 0;
+    color: #666;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.recommendations ul li {
+    margin-bottom: 4px;
+}
+
+.recommendations ul li:last-child {
+    margin-bottom: 0;
+}
+
+/* Drop Zone */
+.drop-zone {
+    border: 2px dashed #ccc;
+    border-radius: 10px;
+    padding: 32px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .3s, background-color .3s, padding .3s;
+    background: #fafafa;
+}
+
+.drop-zone.drag-over {
+    border-color: #4a90d9;
+    background: #eef5ff;
+}
+
+.drop-zone.compact {
+    padding: 16px 24px;
+    border-style: dotted;
+}
+
+.drop-zone-icon { font-size: 48px; margin-bottom: 12px; color: #bbb; transition: font-size .3s; }
+.drop-zone.compact .drop-zone-icon { font-size: 28px; margin-bottom: 6px; }
+
+.drop-zone-text { color: #666; font-size: 1rem; margin-bottom: 6px; }
+.drop-zone.compact .drop-zone-text { font-size: 0.9rem; }
+
+.drop-zone-hint { color: #aaa; font-size: 0.82rem; }
+.drop-zone.compact .drop-zone-hint { font-size: 0.75rem; }
+
+.drop-zone input[type="file"] { display: none; }
+
+/* Preview Grid */
+.preview-grid {
+    display: none;
+    margin-top: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 12px;
+}
+
+.preview-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f0f0f0;
+    cursor: pointer;
+    transition: transform .2s, box-shadow .2s;
+}
+
+.preview-item:hover {
+    transform: scale(1.03);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.preview-remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(231, 76, 60, 0.95);
+    color: #fff;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity .2s;
+    z-index: 2;
+}
+
+.preview-item:hover .preview-remove { opacity: 1; }
+.preview-remove:hover { background: #c0392b; }
+
+.preview-meta {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 6px 8px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    color: #fff;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    z-index: 1;
+}
+
+/* File counter */
+.file-counter {
+    text-align: center;
+    margin-top: 12px;
+    color: #555;
+    font-size: 0.9rem;
+    display: none;
+}
+
+/* Upload Button */
+.upload-btn-wrapper {
+    text-align: center;
+    margin-top: 24px;
+    display: none;
+}
+
+.btn-upload {
+    background: #4a90d9;
+    color: #fff;
+    border: none;
+    padding: 14px 48px;
+    font-size: 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .3s;
+}
+
+.btn-upload:hover { background: #357abd; }
+.btn-upload:disabled { background: #aac; cursor: not-allowed; }
+
+/* Status */
+.status {
+    display: none;
+    margin-top: 24px;
+    text-align: center;
+    color: #666;
+}
+
+.status.processing { color: #4a90d9; }
+.status.error { color: #c0392b; }
+.status.success { color: #27ae60; }
+
+.spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid #ccc;
+    border-top-color: #4a90d9;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Result */
+.result-area {
+    display: none;
+    margin-top: 28px;
+    border-top: 1px solid #eee;
+    padding-top: 24px;
+}
+
+.result-area h2 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 16px;
+}
+
+.report {
+    background: #1e1e1e;
+    color: #dcdcdc;
+    padding: 16px;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.btn-new {
+    display: block;
+    margin: 20px auto 0;
+    background: none;
+    border: 1px solid #ccc;
+    padding: 10px 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #666;
+    transition: background .3s;
+}
+
+.btn-new:hover { background: #f0f0f0; color: #333; }
+
+/* API config */
+.api-config {
+    margin-top: 24px;
+    padding: 12px 16px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    border: 1px solid #eee;
+}
+
+.api-config label {
+    font-size: 0.82rem;
+    color: #888;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.api-config input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+/* Scrollbar */
+.report::-webkit-scrollbar { width: 6px; }
+.report::-webkit-scrollbar-track { background: #333; border-radius: 3px; }
+.report::-webkit-scrollbar-thumb { background: #666; border-radius: 3px; }
+.report::-webkit-scrollbar-thumb:hover { background: #888; }
+
+/* Mobile */
+@media (max-width: 480px) {
+    .container { padding: 24px 20px; }
+    .recommendations { padding: 16px; }
+    .recommendations ol { font-size: 0.85rem; }
+}
