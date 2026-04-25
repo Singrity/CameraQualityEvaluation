@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera Quality Evaluator</title>
+    <!-- Библиотека для конвертации HEIC в браузере (только для превью) -->
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -274,7 +276,7 @@
         <div class="drop-zone" id="dropZone">
             <div class="drop-zone-icon">🖼️</div>
             <div class="drop-zone-text">Drag & drop images here, or <strong>click to browse</strong></div>
-            <div class="drop-zone-hint">PNG, JPG, WEBP — up to 16 MB each</div>
+            <div class="drop-zone-hint">PNG, JPG, WEBP, HEIC — up to 16 MB each</div>
             <input type="file" id="fileInput" accept="image/*" multiple>
         </div>
 
@@ -312,7 +314,14 @@
         const reportEl        = document.getElementById('report');
         const btnNew          = document.getElementById('btnNew');
 
-        /** @type {Array<{file: File, previewUrl: string}>} */
+        /** 
+         * @typedef {Object} SelectedFile
+         * @property {File} originalFile - Оригинал для отправки на сервер
+         * @property {string} previewUrl - URL для отображения в <img>
+         * @property {Blob} [previewBlob] - Blob превью (для очистки памяти, если это конвертированный HEIC)
+         */
+
+        /** @type {Array<SelectedFile>} */
         let selectedFiles = [];
         let pollInterval = null;
         let isProcessing = false;
@@ -327,7 +336,6 @@
         });
 
         dropZone.addEventListener('dragleave', e => {
-            // Only remove class if leaving the dropZone itself, not a child
             if (e.target === dropZone) {
                 dropZone.classList.remove('drag-over');
             }
@@ -343,28 +351,57 @@
         fileInput.addEventListener('change', () => {
             if (isProcessing) return;
             if (fileInput.files.length) handleFiles(fileInput.files);
-            fileInput.value = ''; // Reset to allow re-selecting same file
+            fileInput.value = '';
         });
 
-        // ── Handle Files ──
-        function handleFiles(list) {
-            const valid = Array.from(list).filter(f => {
-                if (!f.type.startsWith('image/')) {
-                    showStatus(`Skipped "${f.name}": not an image`, 'error');
-                    return false;
-                }
-                if (f.size > 16 * 1024 * 1024) {
-                    showStatus(`Skipped "${f.name}": too large (>16MB)`, 'error');
-                    return false;
-                }
-                return !selectedFiles.some(x => x.file.name === f.name && x.file.size === f.size);
-            });
-            if (!valid.length) return;
+        // ── Handle Files (async для поддержки HEIC конвертации) ──
+        async function handleFiles(list) {
+            showStatus('Processing images...', 'processing');
 
-            valid.forEach(file => {
-                const previewUrl = URL.createObjectURL(file);
-                selectedFiles.push({ file, previewUrl });
-            });
+            for (const file of Array.from(list)) {
+                // Базовые валидации
+                if (!file.type.startsWith('image/') || file.size > 16 * 1024 * 1024) {
+                    showStatus(`Skipped "${file.name}": invalid or too large`, 'error');
+                    continue;
+                }
+                
+                // Проверка на дубликаты
+                if (selectedFiles.some(x => x.originalFile.name === file.name && x.originalFile.size === file.size)) {
+                    continue;
+                }
+
+                let previewUrl = null;
+                let previewBlob = null;
+                const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic');
+
+                try {
+                    if (isHeic && typeof heic2any !== 'undefined') {
+                        // Конвертация HEIC → JPEG только для превью
+                        const blob = await heic2any({
+                            blob: file,
+                            toType: 'image/jpeg',
+                            quality: 0.7
+                        });
+                        previewBlob = blob;
+                        previewUrl = URL.createObjectURL(blob);
+                    } else {
+                        // Обычные форматы или фоллбэк
+                        previewUrl = URL.createObjectURL(file);
+                    }
+
+                    selectedFiles.push({
+                        originalFile: file,
+                        previewUrl,
+                        previewBlob
+                    });
+
+                } catch (err) {
+                    console.error('Preview generation error:', err);
+                    // Фоллбэк: пробуем показать оригинал
+                    previewUrl = URL.createObjectURL(file);
+                    selectedFiles.push({ originalFile: file, previewUrl, previewBlob: null });
+                }
+            }
 
             renderPreviews();
             updateUI();
@@ -384,14 +421,14 @@
             previewGrid.style.display = 'grid';
             dropZone.classList.add('compact');
 
-            selectedFiles.forEach(({ file, previewUrl }, index) => {
+            selectedFiles.forEach(({ originalFile, previewUrl }, index) => {
                 const item = document.createElement('div');
                 item.className = 'preview-item';
-                item.title = `${file.name}\nClick to view`;
+                item.title = `${originalFile.name}\nClick to view`;
 
                 const img = document.createElement('img');
                 img.src = previewUrl;
-                img.alt = file.name;
+                img.alt = originalFile.name;
                 img.loading = 'lazy';
 
                 const removeBtn = document.createElement('button');
@@ -405,7 +442,15 @@
 
                 const meta = document.createElement('div');
                 meta.className = 'preview-meta';
-                meta.textContent = `${(file.size / 1024).toFixed(0)} KB`;
+                meta.textContent = `${(originalFile.size / 1024).toFixed(0)} KB`;
+
+                // Бейдж для HEIC
+                if (originalFile.name.toLowerCase().endsWith('.heic') || originalFile.type.includes('heic')) {
+                    const badge = document.createElement('div');
+                    badge.style.cssText = 'position:absolute;top:6px;left:6px;background:#f39c12;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.65rem;z-index:2;pointer-events:none;';
+                    badge.textContent = 'HEIC';
+                    item.appendChild(badge);
+                }
 
                 item.addEventListener('click', () => {
                     window.open(previewUrl, '_blank');
@@ -421,8 +466,8 @@
         // ── Remove File ──
         function removeFile(index) {
             if (isProcessing) return;
-            const { previewUrl } = selectedFiles[index];
-            URL.revokeObjectURL(previewUrl);
+            const item = selectedFiles[index];
+            URL.revokeObjectURL(item.previewUrl);
             selectedFiles.splice(index, 1);
             renderPreviews();
             updateUI();
@@ -434,7 +479,6 @@
             fileCounter.style.display = selectedFiles.length ? 'block' : 'none';
             uploadBtnWrapper.style.display = selectedFiles.length && !isProcessing ? 'block' : 'none';
             
-            // Update drop zone text based on state
             const dropText = dropZone.querySelector('.drop-zone-text');
             const dropHint = dropZone.querySelector('.drop-zone-hint');
             
@@ -445,12 +489,12 @@
                 dropZone.style.opacity = '0.6';
             } else if (selectedFiles.length > 0) {
                 dropText.innerHTML = 'Drop <strong>more</strong> images to add, or <strong>click to browse</strong>';
-                dropHint.textContent = 'PNG, JPG, WEBP — up to 16 MB each';
+                dropHint.textContent = 'PNG, JPG, WEBP, HEIC — up to 16 MB each';
                 dropZone.style.pointerEvents = '';
                 dropZone.style.opacity = '1';
             } else {
                 dropText.innerHTML = 'Drag & drop images here, or <strong>click to browse</strong>';
-                dropHint.textContent = 'PNG, JPG, WEBP — up to 16 MB each';
+                dropHint.textContent = 'PNG, JPG, WEBP, HEIC — up to 16 MB each';
                 dropZone.style.pointerEvents = '';
                 dropZone.style.opacity = '1';
             }
@@ -473,6 +517,7 @@
             stopPolling();
             hideStatus();
             isProcessing = false;
+            btnUpload.disabled = false; // 🔧 Исправление: разблокируем кнопку
             updateUI();
         }
 
@@ -485,11 +530,12 @@
             isProcessing = true;
             btnUpload.disabled = true;
             resultArea.style.display = 'none';
-            updateUI(); // Update drop zone state
+            updateUI();
             showStatus('Uploading files…', 'processing');
 
             const formData = new FormData();
-            selectedFiles.forEach(({ file }) => formData.append('files', file));
+            // 🔧 Отправляем originalFile (оригинальный HEIC, если был)
+            selectedFiles.forEach(({ originalFile }) => formData.append('files', originalFile));
 
             const uploadUrl = '/evaluate';
 

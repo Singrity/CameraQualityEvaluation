@@ -1,11 +1,10 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.templating import Jinja2Templates
-from camera_evaluator import CameraEvaluator
-import shutil
-import os
-import tempfile
+from fastapi import FastAPI
 from controllers.evaluate import router as evaluate_router
 from controllers.index import router as index_router
+import os, certifi, ssl
+
+os.environ['SSL_CERT_FILE'] = certifi.where()
+ssl._create_default_https_context = ssl.create_default_context
 
 app = FastAPI(title="Camera Quality Evaluator")
 
