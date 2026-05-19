@@ -1,17 +1,32 @@
-from fastapi import APIRouter, Request, UploadFile, File, HTTPException
-import uuid, asyncio
-from utils import save_img
 import json
-from core.redis.redis_client import redis_client
-from core.redis.jobs_model import Job
+import asyncio
+import uuid
+import logging
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from utils import save_img
+from core.redis.redis_client import redis_mgr
+from core.redis.jobs_model import Job, JobStatus
 from core.services.camera_evaluator_service import CameraEvaluatorService
 
 router = APIRouter()
 evaluator = CameraEvaluatorService()
+logger = logging.getLogger(__name__)
+JOB_TTL = 3600  # 1 час
 
+async def _run_evaluation_task(job_id: str, img_paths: list[str]):
+    """Фоновая задача с обработкой ошибок и обновлением статуса в Redis"""
+    try:
+        await evaluator.evaluate(job_id, img_paths)
+    except Exception as e:
+        logger.exception(f"❌ Evaluation failed for job {job_id}: {e}")
+        await redis_mgr.client.set(
+            job_id,
+            json.dumps(Job(id=job_id, status="failed", error=str(e), img_paths=img_paths).model_dump()),
+            ex=JOB_TTL
+        )
 
 @router.post("/evaluate")
-async def evaluate(request: Request, files: list[UploadFile] = File(...)):
+async def evaluate(files: list[UploadFile] = File(...)):
     # TODO: handle duplicates images
     # TODO: store metrics in postgres?
 
@@ -21,25 +36,20 @@ async def evaluate(request: Request, files: list[UploadFile] = File(...)):
         img_paths.append(img_path)
 
     job_id = str(uuid.uuid4())
+    job = Job(id=job_id, status="processing", img_paths=img_paths)
 
-    job = Job(id=job_id, status="processing", result=None, img_paths=img_paths)
+    # Сохраняем задачу с TTL
+    await redis_mgr.client.set(job_id, json.dumps(job.model_dump()), ex=JOB_TTL)
 
-    await redis_client.set(job_id, json.dumps(job.model_dump()))
-
-    print(f"Received job {job_id} with {len(files)} files {files}")
-    asyncio.create_task(evaluator.evaluate(job, img_paths))
+    # Запускаем в фоне (не блокирует HTTP-ответ)
+    asyncio.create_task(_run_evaluation_task(job_id, img_paths))
+    
     return {"job_id": job_id, "status": "processing"}
 
-
 @router.get("/evaluate/status")
-async def evaluate_status(request: Request, job_id: str):
-    print(f"Checking status for job {job_id}")
-    job = await redis_client.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    job_data = Job(**json.loads(job)).model_dump()
-    return {
-        "job_id": job_id,
-        "status": job_data["status"],
-        "report": job_data["result"],
-    }
+async def evaluate_status(job_id: str):
+    job_raw = await redis_mgr.client.get(job_id)
+    if not job_raw:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    
+    return Job(**json.loads(job_raw)).model_dump()

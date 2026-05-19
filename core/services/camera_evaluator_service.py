@@ -6,15 +6,20 @@ import exifread
 from skimage import img_as_float
 from piq import brisque
 import warnings
+import json
+import asyncio
+import logging
 from typing import List, Dict, Any
 from collections import Counter
-from core.redis.jobs_model import Job
-from core.redis.redis_client import redis_client
-import json
+
 from utils import resize_for_evaluation
+from core.redis.redis_client import redis_mgr
+from core.redis.jobs_model import Job, JobStatus
 
 warnings.filterwarnings("ignore")
+logger = logging.getLogger(__name__)
 
+JOB_TTL = 3600
 
 class CameraEvaluatorService:
     # Эвристические пороги нормализации (можно калибровать под датасет)
@@ -46,19 +51,37 @@ class CameraEvaluatorService:
         else:
             img = cv2.imread(path)
             if img is None:
-                pass
+                logger.warning(f"⚠️ Не удалось прочитать изображение: {path}")
+                return None  # явный возврат вместо неявного
             return img
 
     def extract_exif(self, img_path: str) -> dict:
-        with open(img_path, "rb") as f:
-            tags = exifread.process_file(f, details=False)
-        return {
-            "camera": f"{tags.get('Image Make', '')} {tags.get('Image Model', '')}".strip(),
-            "iso": str(tags.get("EXIF ISOSpeedRatings", "Unknown")),
-            "aperture": str(tags.get("EXIF FNumber", "Unknown")),
-            "focal_length": str(tags.get("EXIF FocalLength", "Unknown")),
-            "datetime": str(tags.get("EXIF DateTimeOriginal", "Unknown")),
-        }
+        try:
+            with open(img_path, "rb") as f:
+                tags = exifread.process_file(f, details=False)
+            
+            make = str(tags.get('Image Make', '')).strip()
+            model = str(tags.get('Image Model', '')).strip()
+            camera = f"{make} {model}".strip() if make or model else "Unknown"
+            
+            # 🔍 Отладка: если камера Unknown, пишем в лог
+            if camera == "Unknown":
+                logger.warning(f"⚠️ EXIF не найден в {img_path}. Доступные теги: {list(tags.keys())[:10]}")
+            
+            return {
+                "camera": camera,
+                "iso": str(tags.get("EXIF ISOSpeedRatings", "Unknown")),
+                "aperture": str(tags.get("EXIF FNumber", "Unknown")),
+                "focal_length": str(tags.get("EXIF FocalLength", "Unknown")),
+                "datetime": str(tags.get("EXIF DateTimeOriginal", "Unknown")),
+            }
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка чтения EXIF из {img_path}: {e}")
+            return {
+                "camera": "Unknown",
+                "iso": "Unknown", "aperture": "Unknown",
+                "focal_length": "Unknown", "datetime": "Unknown"
+            }
 
     def estimate_sharpness(self, img: np.ndarray) -> float:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -82,10 +105,8 @@ class CameraEvaluatorService:
             "brisque": float(brisque(tensor)),
         }
 
-    async def evaluate(self, job: Job, img_paths: List[str]) -> dict:
-        if not img_paths:
-            raise ValueError("Список изображений пуст")
-
+    # Вынесено в sync-метод, чтобы запускать через asyncio.to_thread
+    def _process_sync(self, img_paths: List[str]) -> dict[str, Any]:
         per_image = []
         cameras = []
 
@@ -155,7 +176,8 @@ class CameraEvaluatorService:
         same_camera = len(camera_counts) == 1
 
         final_score = round(float(agg["score"]), 1)
-        report = {
+
+        return {
             "images_processed": len(per_image),
             "primary_camera": primary_camera,
             "single_camera_used": same_camera,
@@ -169,22 +191,29 @@ class CameraEvaluatorService:
                 "brisque_median": round(float(agg["brisque"]), 2),
             },
             "per_image_scores": [m["score"] for m in per_image],
-            "recommendations": self._generate_recommendations(
-                agg, same_camera, len(per_image), consistency
-            ),
+            "recommendations": self._generate_recommendations(agg, same_camera, len(per_image), consistency),
         }
 
-        # Сохранение в Redis
-        await redis_client.set(
-            job.id,
-            json.dumps(
-                Job(
-                    id=job.id, status="completed", result=report, img_paths=img_paths
-                ).model_dump()
-            ),
-        )
+    async def evaluate(self, job_id: str, img_paths: List[str]) -> dict:
+        try:
+            # Запускаем CPU-тяжёлую часть в отдельном потоке, чтобы не блокировать event loop FastAPI
+            report = await asyncio.to_thread(self._process_sync, img_paths)
 
-        return report
+            await redis_mgr.client.set(
+                job_id,
+                json.dumps(Job(id=job_id, status="completed", result=report, img_paths=img_paths).model_dump()),
+                ex=JOB_TTL
+            )
+            logger.info(f"✅ Job {job_id} completed successfully")
+            return report
+        except Exception as e:
+            logger.exception(f"❌ Job {job_id} failed")
+            await redis_mgr.client.set(
+                job_id,
+                json.dumps(Job(id=job_id, status="failed", error=str(e), img_paths=img_paths).model_dump()),
+                ex=JOB_TTL
+            )
+            raise
 
     @staticmethod
     def _grade(score: float) -> str:
