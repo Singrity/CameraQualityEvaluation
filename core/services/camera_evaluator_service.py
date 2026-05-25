@@ -1,4 +1,5 @@
 import cv2
+import torch
 from PIL import ImageOps, Image
 import pillow_heif
 import numpy as np
@@ -10,6 +11,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from collections import Counter
 import json
+
+from skimage.color import rgb2lab
 
 from core.redis.jobs_model import Job
 from core.redis.redis_client import redis_client
@@ -32,7 +35,7 @@ class CameraEvaluatorService:
     }
 
     # Веса метрик в итоговой оценке
-    WEIGHTS = {"sharp": 0.25, "noise": 0.25, "color": 0.15, "brisque": 0.20}
+    WEIGHTS = {"sharp": 0.30, "noise": 0.30, "color": 0.20, "brisque": 0.20}
 
     # Направление оптимизации метрик: "higher" = больше лучше, "lower" = меньше лучше
     METRIC_DIRECTION = {
@@ -141,19 +144,20 @@ class CameraEvaluatorService:
             # Если ковариационная матрица вырождена — fallback
             return self._estimate_noise_simple(img)
 
-    def estimate_color_vibrancy(self, img: np.ndarray) -> float:
-        """Оценка насыщенности цветов через HSV"""
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        return float(np.mean(hsv[:, :, 1]))
+    def estimate_color_naturalness(self, img: np.ndarray) -> float:
+        lab = rgb2lab(cv2.cvtColor(img, cv2.COLOR_BGR2RGB) / 255.0)
+        # Естественные сцены: умеренная дисперсия в цветовых каналах
+        a_std, b_std = np.std(lab[:, :, 1]), np.std(lab[:, :, 2])
+        return float(100 / (1 + abs(a_std - 15) + abs(b_std - 20)))
 
     def compute_iqa(self, img: np.ndarray) -> dict:
         """Вычисление no-reference IQA метрик (BRISQUE)"""
-        import torch
         try:
-            img_float = img_as_float(img)
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img_float = img_as_float(img_rgb)
             # BRISQUE ожидает [0, 1], каналы в порядке RGB
-            tensor = torch.from_numpy(img_float.transpose(2, 0, 1)).unsqueeze(0)
-            brisque_score = float(brisque(tensor))
+            tensor = torch.from_numpy(img_float.transpose(2, 0, 1)).unsqueeze(0).to(torch.float32)
+            brisque_score = brisque(tensor)
             return {"brisque": brisque_score}
         except Exception as e:
             logger.warning(f"⚠️ Ошибка вычисления BRISQUE: {e}")
@@ -205,7 +209,7 @@ class CameraEvaluatorService:
             # === Вычисление сырых метрик ===
             sharp = self.estimate_sharpness(img)
             noise = self.estimate_noise(img)
-            color = self.estimate_color_vibrancy(img)
+            color = self.estimate_color_naturalness(img)
             iqa = self.compute_iqa(img)
 
             # === Нормализация с учётом направления оптимизации ===
@@ -260,7 +264,7 @@ class CameraEvaluatorService:
 
         # Консистентность: стабильность оценок между кадрами
         score_std = np.std([m["score"] for m in per_image])
-        consistency = max(0.0, min(1.0, 1.0 - (score_std / 30.0))) * 100
+        consistency = max(0.0, min(1.0, 1.0 - (score_std / 30.0))) * 100 # # 30.0 = эмпирический порог: σ > 30 = высокий разброс
 
         # Валидация EXIF: определяем доминирующую камеру
         camera_counts = Counter([c for c in cameras if c and c != "Unknown"])
