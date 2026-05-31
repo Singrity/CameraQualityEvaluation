@@ -1,9 +1,11 @@
 from redis.asyncio import Redis, ConnectionPool
 
+from settings import Settings
+
 
 pool = ConnectionPool(
-    host="redis",
-    port=6379,
+    host=Settings.REDIS_HOST,
+    port=Settings.REDIS_PORT,
     db=0,
     decode_responses=True,
     max_connections=200,

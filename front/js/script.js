@@ -1,13 +1,18 @@
-const dropZone        = document.getElementById('dropZone');
-const fileInput       = document.getElementById('fileInput');
-const previewGrid     = document.getElementById('previewGrid');
-const fileCounter     = document.getElementById('fileCounter');
-const uploadBtnWrapper= document.getElementById('uploadBtnWrapper');
-const btnUpload       = document.getElementById('btnUpload');
-const statusEl        = document.getElementById('status');
-const resultArea      = document.getElementById('resultArea');
-const reportEl        = document.getElementById('report');
-const btnNew          = document.getElementById('btnNew');
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const previewGrid = document.getElementById('previewGrid');
+const fileCounter = document.getElementById('fileCounter');
+const uploadBtnWrapper = document.getElementById('uploadBtnWrapper');
+const btnUpload = document.getElementById('btnUpload');
+const statusEl = document.getElementById('status');
+const resultArea = document.getElementById('resultArea');
+const reportEl = document.getElementById('report');
+const btnNew = document.getElementById('btnNew');
+const ratingTable = document.querySelector('.rating-table');
+const ratingTableBody = document.getElementById('ratingTableBody');
+const ratingEmpty = document.getElementById('ratingEmpty');
+
+const RATING_STORAGE_KEY = 'cameraQualityRating';
 
 /** 
  * @typedef {Object} SelectedFile
@@ -59,7 +64,7 @@ async function handleFiles(list) {
             showStatus(`Skipped "${file.name}": invalid or too large`, 'error');
             continue;
         }
-        
+
         // Проверка на дубликаты
         if (selectedFiles.some(x => x.originalFile.name === file.name && x.originalFile.size === file.size)) {
             continue;
@@ -106,7 +111,7 @@ async function handleFiles(list) {
 // ── Render Previews ──
 function renderPreviews() {
     previewGrid.innerHTML = '';
-    
+
     if (selectedFiles.length === 0) {
         previewGrid.style.display = 'none';
         dropZone.classList.remove('compact');
@@ -173,10 +178,10 @@ function updateUI() {
     fileCounter.textContent = `${selectedFiles.length} file(s) selected`;
     fileCounter.style.display = selectedFiles.length ? 'block' : 'none';
     uploadBtnWrapper.style.display = selectedFiles.length && !isProcessing ? 'block' : 'none';
-    
+
     const dropText = dropZone.querySelector('.drop-zone-text');
     const dropHint = dropZone.querySelector('.drop-zone-hint');
-    
+
     if (isProcessing) {
         dropText.innerHTML = 'Processing…';
         dropHint.textContent = 'Please wait for the report';
@@ -293,8 +298,8 @@ function stopPolling() {
 // ── UI Helpers ──
 function showStatus(msg, type) {
     statusEl.className = `status ${type}`;
-    statusEl.innerHTML = type === 'processing' 
-        ? `<span class="spinner"></span>${msg}` 
+    statusEl.innerHTML = type === 'processing'
+        ? `<span class="spinner"></span>${msg}`
         : msg;
     statusEl.style.display = 'block';
 }
@@ -303,11 +308,253 @@ function hideStatus() {
     statusEl.style.display = 'none';
 }
 
+function extractReport(data) {
+    if (!data || typeof data !== 'object') return null;
+    if (data.report && typeof data.report === 'object') return data.report;
+    if (
+        'primary_camera' in data ||
+        'camera_score' in data ||
+        'images_processed' in data
+    ) {
+        return data;
+    }
+    return null;
+}
+
+function formatReportNumber(value, mode = 'score') {
+    if (value === null || value === undefined) return '—';
+    if (typeof value !== 'number' || Number.isNaN(value)) return String(value);
+
+    if (mode === 'noise') {
+        if (Math.abs(value) < 1) {
+            return value.toLocaleString('ru-RU', { maximumSignificantDigits: 4 });
+        }
+        return value.toLocaleString('ru-RU', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    return value.toLocaleString('ru-RU', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+}
+
+function renderReportTable(report) {
+    const table = document.createElement('table');
+    table.className = 'report-table';
+
+    const tbody = document.createElement('tbody');
+
+    const addRow = (label, value, { format } = {}) => {
+        if (value === null || value === undefined || value === '') return;
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.scope = 'row';
+        th.textContent = label;
+        const td = document.createElement('td');
+        if (format === 'number') {
+            td.textContent = formatReportNumber(value, 'score');
+        } else if (format === 'noise') {
+            td.textContent = formatReportNumber(value, 'noise');
+        } else {
+            td.textContent = String(value);
+        }
+        tr.append(th, td);
+        tbody.appendChild(tr);
+    };
+
+    const addPerImageScoresRow = (scores) => {
+        if (!Array.isArray(scores) || !scores.length) return;
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.scope = 'row';
+        th.textContent = 'Оценка каждого изображения';
+        const td = document.createElement('td');
+        const grid = document.createElement('div');
+        grid.className = 'report-scores';
+        scores.forEach((score, index) => {
+            const chip = document.createElement('span');
+            chip.className = 'report-score-chip';
+            chip.title = `Изображение ${index + 1}`;
+            const label = document.createElement('span');
+            label.className = 'report-score-chip__label';
+            label.textContent = `${index + 1}`;
+            const valueEl = document.createElement('span');
+            valueEl.className = 'report-score-chip__value';
+            valueEl.textContent = formatReportNumber(score, 'score');
+            chip.append(label, valueEl);
+            grid.appendChild(chip);
+        });
+        td.appendChild(grid);
+        tr.append(th, td);
+        tbody.appendChild(tr);
+    };
+
+    const addSection = (label) => {
+        const tr = document.createElement('tr');
+        tr.className = 'report-section';
+        const th = document.createElement('th');
+        th.colSpan = 2;
+        th.textContent = label;
+        tr.appendChild(th);
+        tbody.appendChild(tr);
+    };
+
+    const addRecommendationsRow = (items) => {
+        if (!Array.isArray(items) || !items.length) return;
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.scope = 'row';
+        th.textContent = 'Рекомендации';
+        const td = document.createElement('td');
+        const list = document.createElement('ul');
+        list.className = 'report-recommendations';
+        items.forEach((text) => {
+            const li = document.createElement('li');
+            li.textContent = text;
+            list.appendChild(li);
+        });
+        td.appendChild(list);
+        tr.append(th, td);
+        tbody.appendChild(tr);
+    };
+
+    addRow('Название камеры', report.primary_camera);
+    addRow('Количество изображений', report.images_processed);
+    addRow('Оценка камеры', report.camera_score, { format: 'number' });
+    addRow('Вывод', report.grade);
+    addRow('Консистенция', report.consistency_score, { format: 'number' });
+
+    const metrics = report.aggregated_metrics;
+    if (metrics && typeof metrics === 'object') {
+        addSection('Агрегированные метрики');
+        addRow('Sharpness median', metrics.sharpness_median, { format: 'number' });
+        addRow('Noise median', metrics.noise_median, { format: 'noise' });
+        addRow('Color vibrancy median', metrics.color_vibrancy_median, { format: 'number' });
+        addRow('Brisque median', metrics.brisque_median, { format: 'number' });
+    }
+
+    addPerImageScoresRow(report.per_image_scores);
+    addRecommendationsRow(report.recommendations);
+
+    table.appendChild(tbody);
+    return table;
+}
+
 function showReport(data) {
     resultArea.style.display = 'block';
+    reportEl.innerHTML = '';
+
+    const report = extractReport(data);
+    if (!report) {
+        reportEl.textContent = 'Нет данных отчёта';
+        return;
+    }
+
+    reportEl.appendChild(renderReportTable(report));
+    saveReportToRating(report);
+}
+
+// ── Camera rating (localStorage) ──
+
+function loadRatingEntries() {
     try {
-        reportEl.textContent = JSON.stringify(data, null, 2);
+        const raw = localStorage.getItem(RATING_STORAGE_KEY);
+        if (!raw) return [];
+        const data = JSON.parse(raw);
+        if (!Array.isArray(data)) return [];
+        return data.filter(
+            (entry) =>
+                entry &&
+                typeof entry.cameraName === 'string' &&
+                typeof entry.score === 'number' &&
+                !Number.isNaN(entry.score)
+        );
     } catch {
-        reportEl.textContent = String(data);
+        return [];
     }
 }
+
+function saveRatingEntries(entries) {
+    localStorage.setItem(RATING_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function upsertCameraRating(cameraName, score) {
+    const name = String(cameraName).trim();
+    if (!name || typeof score !== 'number' || Number.isNaN(score)) return;
+
+    const entries = loadRatingEntries();
+    const nameKey = name.toLowerCase();
+    const index = entries.findIndex(
+        (entry) => entry.cameraName.toLowerCase() === nameKey
+    );
+    const record = { cameraName: name, score, updatedAt: Date.now() };
+
+    if (index >= 0) {
+        entries[index] = record;
+    } else {
+        entries.push(record);
+    }
+
+    saveRatingEntries(entries);
+}
+
+function getRankedCameras() {
+    const entries = [...loadRatingEntries()];
+    entries.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.cameraName.localeCompare(b.cameraName, 'ru');
+    });
+    return entries.map((entry, index) => ({
+        place: index + 1,
+        cameraName: entry.cameraName,
+        score: entry.score,
+    }));
+}
+
+function renderRatingTable() {
+    const ranked = getRankedCameras();
+    ratingTableBody.innerHTML = '';
+
+    if (!ranked.length) {
+        ratingTable.hidden = true;
+        ratingEmpty.hidden = false;
+        return;
+    }
+
+    ratingTable.hidden = false;
+    ratingEmpty.hidden = true;
+
+    ranked.forEach(({ place, cameraName, score }) => {
+        const tr = document.createElement('tr');
+        if (place <= 3) {
+            tr.classList.add('rating-place', `rating-place--${place}`);
+        }
+
+        const tdPlace = document.createElement('td');
+        tdPlace.className = 'rating-place-cell';
+        tdPlace.textContent = String(place);
+
+        const tdName = document.createElement('td');
+        tdName.textContent = cameraName;
+
+        const tdScore = document.createElement('td');
+        tdScore.className = 'rating-score-cell';
+        tdScore.textContent = formatReportNumber(score, 'score');
+
+        tr.append(tdPlace, tdName, tdScore);
+        ratingTableBody.appendChild(tr);
+    });
+}
+
+function saveReportToRating(report) {
+    const cameraName = report.primary_camera;
+    const score = report.camera_score;
+    if (!cameraName || score === null || score === undefined) return;
+    upsertCameraRating(cameraName, Number(score));
+    renderRatingTable();
+}
+
+renderRatingTable();
