@@ -79,6 +79,7 @@ class CameraEvaluatorService:
 
             make = str(tags.get("Image Make", "")).strip()
             model = str(tags.get("Image Model", "")).strip()
+        
             camera = f"{make} {model}".strip() if make or model else "Unknown"
 
             return {

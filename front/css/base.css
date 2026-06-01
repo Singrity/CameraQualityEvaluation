@@ -475,3 +475,58 @@ h1 {
     .recommendations { padding: 16px; }
     .recommendations ol { font-size: 0.85rem; }
 }
+
+
+.camera-input-wrapper {
+    margin-bottom: 20px;
+}
+
+.camera-label {
+    display: block;
+    margin-bottom: 8px;
+    color: #333;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.camera-input {
+    width: 100%;
+    padding: 14px 16px;
+    border: 2px solid #d4e4f5;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    background: #fff;
+}
+
+.camera-input:focus {
+    outline: none;
+    border-color: #4a90d9;
+    box-shadow: 0 0 0 4px rgba(74, 144, 217, 0.15);
+}
+
+.camera-input::placeholder {
+    color: #9aa8b8;
+}
+
+.camera-card {
+    margin-bottom: 22px;
+    padding: 18px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f8fbff 0%, #f1f7ff 100%);
+    border: 1px solid #dbe9f8;
+}
+
+.camera-card-header {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #2c5282;
+    margin-bottom: 8px;
+}
+
+.camera-card-description {
+    font-size: 0.85rem;
+    color: #667;
+    line-height: 1.5;
+    margin-bottom: 12px;
+}
