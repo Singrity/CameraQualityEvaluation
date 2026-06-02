@@ -14,6 +14,16 @@ const ratingEmpty = document.getElementById('ratingEmpty');
 
 const RATING_STORAGE_KEY = 'cameraQualityRating';
 
+const cameraState = {
+    name: ''
+};
+
+const cameraInput = document.getElementById('cameraName');
+
+cameraInput.addEventListener('input', (e) => {
+    cameraState.name = e.target.value;
+});
+
 /** 
  * @typedef {Object} SelectedFile
  * @property {File} originalFile - Оригинал для отправки на сервер
@@ -214,6 +224,12 @@ function reset() {
     dropZone.style.opacity = '1';
     resultArea.style.display = 'none';
     reportEl.textContent = '';
+
+
+    const input = document.getElementById('cameraName');
+    if (input) input.value = '';
+
+
     stopPolling();
     hideStatus();
     isProcessing = false;
@@ -453,6 +469,17 @@ function showReport(data) {
         return;
     }
 
+
+
+   const isUnknown =
+        !report.primary_camera ||
+        report.primary_camera.toLowerCase().includes('unknown');
+
+    if (isUnknown && cameraState.name.trim()) {
+        report.primary_camera = cameraState.name.trim();
+    }
+
+
     reportEl.appendChild(renderReportTable(report));
     saveReportToRating(report);
 }
@@ -550,8 +577,17 @@ function renderRatingTable() {
 }
 
 function saveReportToRating(report) {
-    const cameraName = report.primary_camera;
+    let  cameraName = report.primary_camera;
     const score = report.camera_score;
+
+   const isUnknown =
+        !cameraName ||
+        cameraName.toLowerCase().includes('unknown');
+
+    if (isUnknown) {
+        cameraName = cameraState.name.trim();
+    }
+
     if (!cameraName || score === null || score === undefined) return;
     upsertCameraRating(cameraName, Number(score));
     renderRatingTable();
