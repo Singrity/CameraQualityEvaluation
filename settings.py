@@ -12,5 +12,5 @@ class Settings:
     POSTGRESQL_PASSWORD: str = os.getenv("POSTGRESQL_PASSWORD", "postgres")
     POSTGRESQL_DB: str = os.getenv("POSTGRESQL_DB", "camera_quality_evaluator")
 
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))

@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera Quality Evaluator</title>
-    
+
     <!-- Внешние стили -->
     <link rel="stylesheet" href="/static/css/base.css">
-    
+
     <!-- Библиотека для конвертации HEIC в браузере (только для превью) -->
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 </head>
@@ -20,8 +20,10 @@
         <div class="recommendations">
             <h3>📋 КАК СДЕЛАТЬ ФОТО ДЛЯ ОЦЕНКИ КАМЕРЫ</h3>
             <ol>
-                <li><strong>Освещение:</strong> Ровное дневное или искусственное рассеянное. Избегайте прямых бликов и теней.</li>
-                <li><strong>Сцена:</strong> Выберите статичный объект с мелкими деталями (текстура дерева, кирпич, листва, ткань).</li>
+                <li><strong>Освещение:</strong> Ровное дневное или искусственное рассеянное. Избегайте прямых бликов и
+                    теней.</li>
+                <li><strong>Сцена:</strong> Выберите статичный объект с мелкими деталями (текстура дерева, кирпич,
+                    листва, ткань).</li>
                 <li><strong>Композиция:</strong> Заполните кадр на 70–80%. Избегайте неба/пустых стен.</li>
                 <li><strong>Фокус:</strong> Ручной или автофокус по центру. Убедитесь в четкости ключевых деталей.</li>
                 <li>
@@ -63,8 +65,24 @@
         <!-- Result -->
         <div class="result-area" id="resultArea">
             <h2>📋 Evaluation Report</h2>
-            <pre class="report" id="report"></pre>
+            <div class="report" id="report"></div>
             <button class="btn-new" id="btnNew">Upload More Images</button>
+        </div>
+
+        <!-- Camera rating (localStorage) -->
+        <div class="rating-area" aria-labelledby="ratingTitle">
+            <h2 id="ratingTitle">🏆 Рейтинг камер</h2>
+            <table class="rating-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Место</th>
+                        <th scope="col">Название камеры</th>
+                        <th scope="col">Оценка камеры</th>
+                    </tr>
+                </thead>
+                <tbody id="ratingTableBody"></tbody>
+            </table>
+            <p class="rating-empty" id="ratingEmpty">Рейтинг пуст. Загрузите фото и запустите оценку.</p>
         </div>
     </div>
 

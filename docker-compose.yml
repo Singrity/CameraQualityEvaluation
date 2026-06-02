@@ -1,4 +1,5 @@
 services:
+
   redis:
     image: redis:7-alpine
     container_name: camera_redis
@@ -8,26 +9,18 @@ services:
     volumes:
       - redis_data:/data
 
-  web:
+  app:
     build: .
-    container_name: camera_app
     ports:
       - "8000:8000"
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
     volumes:
-      - ./data:/app/data
+      - .:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    environment:
+      REDIS_HOST: redis
     depends_on:
       - redis
-    command: >
-      uvicorn main:app
-      --host 0.0.0.0
-      --port 8000
-      --reload
-      --reload-exclude data/
-      --reload-exclude __pycache__/
-      --reload-exclude "*.pyc"
+
 
 volumes:
   redis_data:
