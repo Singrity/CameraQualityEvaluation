@@ -1,28 +1,28 @@
-import cv2
-import torch
-from PIL import ImageOps, Image
-import pillow_heif
-import numpy as np
-import exifread
-from skimage import img_as_float, restoration
-from piq import brisque
+import json
+import asyncio
 import warnings
 import logging
 from typing import List, Dict, Any, Optional
 from collections import Counter
-import json
 
+import cv2
+import torch
+import pillow_heif
+import exifread
+import numpy as np
+from PIL import ImageOps, Image
+from skimage import img_as_float, restoration
+from piq import brisque
 from skimage.color import rgb2lab
 
-from core.redis.jobs_model import Job
-from core.redis.redis_client import redis_client
 from utils import resize_for_evaluation
+from core.redis.redis_client import redis_mgr
+from core.redis.jobs_model import Job, JobStatus
 
 warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
-JOB_TTL = 3600  # TTL для задач в секундах
-
+JOB_TTL = 3600
 
 class CameraEvaluatorService:
     # Эвристические пороги нормализации
@@ -58,6 +58,7 @@ class CameraEvaluatorService:
                 pil_img = ImageOps.exif_transpose(pil_img)  # Критично для iPhone
                 img_np = np.array(pil_img)
 
+<<<<<<< HEAD
                 if img_np.ndim == 2:
                     return cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
                 return cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
@@ -70,17 +71,20 @@ class CameraEvaluatorService:
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки {path}: {e}")
             return None
-
+    
     def extract_exif(self, img_path: str) -> dict:
-        """Извлечение EXIF с обработкой ошибок"""
         try:
             with open(img_path, "rb") as f:
                 tags = exifread.process_file(f, details=False)
-
-            make = str(tags.get("Image Make", "")).strip()
-            model = str(tags.get("Image Model", "")).strip()
+            
+            make = str(tags.get('Image Make', '')).strip()
+            model = str(tags.get('Image Model', '')).strip()
             camera = f"{make} {model}".strip() if make or model else "Unknown"
-
+            
+            # 🔍 Отладка: если камера Unknown, пишем в лог
+            if camera == "Unknown":
+                logger.warning(f"⚠️ EXIF не найден в {img_path}. Доступные теги: {list(tags.keys())[:10]}")
+            
             return {
                 "camera": camera,
                 "iso": str(tags.get("EXIF ISOSpeedRatings", "Unknown")),
@@ -96,7 +100,7 @@ class CameraEvaluatorService:
                 "aperture": "Unknown",
                 "focal_length": "Unknown",
                 "datetime": "Unknown",
-            }
+          }
 
     def estimate_sharpness(self, img: np.ndarray) -> float:
         """Оценка резкости через дисперсию Лапласиана"""
@@ -188,10 +192,8 @@ class CameraEvaluatorService:
         normalized = np.clip(np.power(raw, power), 0, 1)
         return float(normalized)
 
-    async def evaluate(self, job: Job, img_paths: List[str]) -> dict:
-        """Основной метод оценки качества камеры по набору изображений"""
-        if not img_paths:
-            raise ValueError("Список изображений пуст")
+    # Вынесено в sync-метод, чтобы запускать через asyncio.to_thread
+    def _process_sync(self, img_paths: List[str]) -> dict[str, Any]:
 
         per_image = []
         cameras = []
@@ -272,8 +274,8 @@ class CameraEvaluatorService:
         same_camera = len(camera_counts) <= 1
 
         final_score = round(float(agg["score"]), 1)
-        
-        report = {
+
+        return {
             "images_processed": len(per_image),
             "primary_camera": primary_camera,
             "single_camera_used": same_camera,
@@ -287,30 +289,29 @@ class CameraEvaluatorService:
                 "brisque_median": round(float(agg["brisque"]), 2),
             },
             "per_image_scores": [m["score"] for m in per_image],
-            "recommendations": self._generate_recommendations(
-                agg, same_camera, len(per_image), consistency
-            ),
+            "recommendations": self._generate_recommendations(agg, same_camera, len(per_image), consistency),
         }
 
-        # === Сохранение результата в Redis ===
+    async def evaluate(self, job_id: str, img_paths: List[str]) -> dict:
         try:
-            job_result = Job(
-                id=job.id, 
-                status="completed", 
-                result=report, 
-                img_paths=img_paths
-            )
-            await redis_client.set(
-                job.id,
-                json.dumps(job_result.model_dump()),
-                ex=JOB_TTL  # ⚠️ Важно: устанавливаем TTL
-            )
-            logger.info(f"✅ Job {job.id} completed: score={final_score}")
-        except Exception as e:
-            logger.error(f"❌ Ошибка сохранения результата в Redis: {e}")
-            raise
+            # Запускаем CPU-тяжёлую часть в отдельном потоке, чтобы не блокировать event loop FastAPI
+            report = await asyncio.to_thread(self._process_sync, img_paths)
 
-        return report
+            await redis_mgr.client.set(
+                job_id,
+                json.dumps(Job(id=job_id, status="completed", result=report, img_paths=img_paths).model_dump()),
+                ex=JOB_TTL
+            )
+            logger.info(f"✅ Job {job_id} completed successfully")
+            return report
+        except Exception as e:
+            logger.exception(f"❌ Job {job_id} failed")
+            await redis_mgr.client.set(
+                job_id,
+                json.dumps(Job(id=job_id, status="failed", error=str(e), img_paths=img_paths).model_dump()),
+                ex=JOB_TTL
+            )
+            raise
 
     @staticmethod
     def _grade(score: float) -> str:

@@ -9,6 +9,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY . /app
 
+RUN mkdir -p data/images
 
 EXPOSE 8000
 
