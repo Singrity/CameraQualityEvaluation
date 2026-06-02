@@ -58,7 +58,6 @@ class CameraEvaluatorService:
                 pil_img = ImageOps.exif_transpose(pil_img)  # Критично для iPhone
                 img_np = np.array(pil_img)
 
-<<<<<<< HEAD
                 if img_np.ndim == 2:
                     return cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
                 return cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
